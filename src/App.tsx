@@ -58,12 +58,14 @@ function App() {
   const {
     playBeep, playSuccessSound, playAlertSound,
     playNavigationSound, playSelectSound, playTypeSound,
+    playErrorSound,
   } = useSound();
 
   const {
     favorites, userResources, hasConsented,
     handleConsent, saveFavorites, addUserResource,
     clearAllData, trackEvent, saveReport,
+    exportBackup, importBackup,
   } = useLocalStorage();
 
   const { filteredResources, selectedIndex, setSelectedIndex } = useResourceFilter({
@@ -73,10 +75,27 @@ function App() {
     isActive: view === 'CONSOLE',
   });
 
+  const [swUpdateAvailable, setSwUpdateAvailable] = useState(false);
+
   // ── Service Worker registration ────────────────────────────────────────
   useEffect(() => {
     if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('/sw.js').catch(() => {
+      navigator.serviceWorker.register('/sw.js').then((registration) => {
+        if (registration.waiting) {
+          setSwUpdateAvailable(true);
+        }
+
+        registration.addEventListener('updatefound', () => {
+          const installingWorker = registration.installing;
+          if (installingWorker) {
+            installingWorker.addEventListener('statechange', () => {
+              if (installingWorker.state === 'installed' && navigator.serviceWorker.controller) {
+                setSwUpdateAvailable(true);
+              }
+            });
+          }
+        });
+      }).catch(() => {
         // SW registration failure is non-fatal in dev mode
       });
     }
@@ -147,9 +166,9 @@ footer{font-size:0.75rem;color:#999;border-top:1px solid #ccc;margin-top:20px;pa
 @media print{button{display:none}}</style></head><body>
 <h1>🆘 SOS Emergency Resource Sheet — ${selectedCity}</h1>
 <p style="color:#666;font-size:0.85rem">Printed from SOS: System of Support | ${new Date().toLocaleDateString('en-IN')}</p>
-${top5.map((r, i) => `<div class="resource"><div class="name">${i + 1}. ${r.name}</div><div class="phone">${r.phone}</div><div class="detail">${r.address}</div><div class="detail">Hours: ${r.hours}</div><div class="detail">Services: ${r.services.slice(0, 3).join(', ')}</div></div>`).join('')}
+${top5.map((r: Resource, i: number) => `<div class="resource"><div class="name">${i + 1}. ${r.name}</div><div class="phone">${r.phone}</div><div class="detail">${r.address}</div><div class="detail">Hours: ${r.hours}</div><div class="detail">Services: ${r.services.slice(0, 3).join(', ')}</div></div>`).join('')}
 <footer>Verified data as of Dec 2025. Call numbers directly — no internet needed.</footer>
-<script>window.onload = () => { window.print(); window.close(); }<\/script></body></html>`;
+<script>window.onload = () => { window.print(); window.close(); }</script></body></html>`;
     const w = window.open('', '_blank', 'width=700,height=800');
     if (w) { w.document.write(html); w.document.close(); }
     else showNotification('Allow pop-ups to print.');
@@ -266,6 +285,7 @@ ${top5.map((r, i) => `<div class="resource"><div class="name">${i + 1}. ${r.name
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [view, focusArea, selectedIndex, filteredResources, selectedType, selectedCity, showHelp, viewResource, showSavedOnly]);
 
 
@@ -330,6 +350,46 @@ ${top5.map((r, i) => `<div class="resource"><div class="name">${i + 1}. ${r.name
               </button>
               <button onClick={clearAllData} className="py-1 px-2 border border-red-700 text-red-400 rounded text-[10px] hover:bg-red-900/30 uppercase font-bold">
                 Reset App
+              </button>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2 mt-2">
+              <button
+                onClick={() => {
+                  const backup = exportBackup();
+                  if (backup) {
+                    navigator.clipboard.writeText(backup).then(() => {
+                      showNotification('> Backup code copied to clipboard!');
+                      playSuccessSound();
+                    }).catch(() => showNotification('Copy failed.'));
+                  } else {
+                    showNotification('Backup failed.');
+                  }
+                }}
+                className="py-1 px-2 border border-amber-600 text-amber-300 rounded text-[10px] hover:bg-amber-900/30 uppercase font-bold"
+                title="Copy configuration backup code to clipboard"
+              >
+                💾 Export
+              </button>
+              <button
+                onClick={() => {
+                  const backup = prompt('Paste your backup configuration code:');
+                  if (backup) {
+                    const success = importBackup(backup);
+                    if (success) {
+                      showNotification('> Configuration imported successfully!');
+                      playSuccessSound();
+                      setTimeout(() => window.location.reload(), 1000);
+                    } else {
+                      showNotification('Error: Invalid backup configuration.');
+                      playErrorSound();
+                    }
+                  }
+                }}
+                className="py-1 px-2 border border-indigo-600 text-indigo-300 rounded text-[10px] hover:bg-indigo-900/30 uppercase font-bold"
+                title="Paste a configuration backup code"
+              >
+                📂 Import
               </button>
             </div>
             {/* Fix 9: Demo resource toggle */}
@@ -616,10 +676,36 @@ ${top5.map((r, i) => `<div class="resource"><div class="name">${i + 1}. ${r.name
 
   return (
     <TerminalLayout header={emergencyMode ? 'EMERGENCY MODE' : 'RESOURCE HUB'}>
+      {swUpdateAvailable && (
+        <div style={{
+          backgroundColor: '#0284c7', color: '#fff', textAlign: 'center',
+          padding: '8px 16px', borderBottom: '2px solid #38bdf8', fontSize: '0.85rem',
+          fontWeight: 'bold', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '12px',
+        }} className="select-none blink">
+          <span>🖲️ SYSTEM UPDATE DETECTED: CRF-OS SHELL UPGRADED</span>
+          <button
+            onClick={() => window.location.reload()}
+            style={{
+              background: '#fff', color: '#0284c7', border: 'none', borderRadius: '4px',
+              padding: '2px 8px', cursor: 'pointer', fontWeight: 'bold', fontSize: '0.8rem'
+            }}
+          >
+            ACTIVATE
+          </button>
+        </div>
+      )}
       <NotificationBanner message={notification} />
       {showHelp && <HelpOverlay />}
       {showStats && <StatsDashboard onClose={() => setShowStats(false)} />}
-      {isCliMode && <CliMode onExit={() => setIsCliMode(false)} />}
+      {isCliMode && (
+        <CliMode
+          onExit={() => setIsCliMode(false)}
+          isDarkMode={isDarkMode}
+          setIsDarkMode={setIsDarkMode}
+          exportBackup={exportBackup}
+          importBackup={importBackup}
+        />
+      )}
       {showSubmission && <ResourceSubmission onClose={() => setShowSubmission(false)} onSubmit={handleAddResource} />}
 
       {!viewResource && !isCliMode && renderConsole()}

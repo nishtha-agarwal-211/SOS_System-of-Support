@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { resources } from '../data/resources';
 import type { Resource, City, ResourceType } from '../data/resources';
 
@@ -111,7 +111,6 @@ interface FilterOptions {
 }
 
 export function useResourceFilter(options: FilterOptions) {
-  const [filteredResources, setFilteredResources] = useState<Resource[]>([]);
   const [selectedIndex, setSelectedIndex] = useState(0);
 
   const {
@@ -120,8 +119,8 @@ export function useResourceFilter(options: FilterOptions) {
     transportMode, favorites, userResources, isActive,
   } = options;
 
-  useEffect(() => {
-    if (!isActive) return;
+  const filteredResources = useMemo(() => {
+    if (!isActive) return [];
 
     let matches = [...userResources, ...resources];
 
@@ -198,13 +197,19 @@ export function useResourceFilter(options: FilterOptions) {
       matches = matches.filter(r => r.languages.includes(filterLanguage));
     }
 
-    setFilteredResources(matches);
-    setSelectedIndex(0);
+    return matches;
   }, [
     selectedCity, selectedType, searchQuery, emergencyMode,
     filterOpenNow, filterLanguage, showSavedOnly, showDemoResources,
     transportMode, favorites, userResources, isActive,
   ]);
 
+  // Reset index to 0 when resources filtered state changes
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setSelectedIndex(0);
+  }, [filteredResources.length]);
+
   return { filteredResources, selectedIndex, setSelectedIndex };
 }
+

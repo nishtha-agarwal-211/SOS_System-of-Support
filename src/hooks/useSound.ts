@@ -6,7 +6,7 @@ export function useSound() {
   const playBeep = (freq = 400, type: OscillatorType = 'square', duration = 0.05) => {
     try {
       if (!audioContext.current) {
-        audioContext.current = new (window.AudioContext || (window as any).webkitAudioContext)();
+        audioContext.current = new (window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext)();
       }
       if (audioContext.current?.state === 'suspended') {
         audioContext.current.resume();

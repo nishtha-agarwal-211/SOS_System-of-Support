@@ -81,7 +81,7 @@ body {
   animation: gradientShift 15s ease infinite;
   color: var(--text-body);
   position: relative;
-  overflow: hidden;
+  overflow: auto;
 }
 
 /* Animated gradient background */
