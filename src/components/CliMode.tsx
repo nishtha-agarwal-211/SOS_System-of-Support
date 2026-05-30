@@ -12,6 +12,88 @@ interface CliModeProps {
 
 const COMMANDS = ['help', 'search', 'list', 'stats', 'theme', 'export', 'import', 'clear', 'exit'];
 
+function getLevenshteinDistance(a: string, b: string): number {
+    const matrix = [];
+    for (let i = 0; i <= b.length; i++) matrix[i] = [i];
+    for (let j = 0; j <= a.length; j++) matrix[0][j] = j;
+
+    for (let i = 1; i <= b.length; i++) {
+        for (let j = 1; j <= a.length; j++) {
+            if (b.charAt(i - 1) === a.charAt(j - 1)) {
+                matrix[i][j] = matrix[i - 1][j - 1];
+            } else {
+                matrix[i][j] = Math.min(
+                    matrix[i - 1][j - 1] + 1, // substitution
+                    matrix[i][j - 1] + 1,     // insertion
+                    matrix[i - 1][j] + 1      // deletion
+                );
+            }
+        }
+    }
+    return matrix[b.length][a.length];
+}
+
+const findClosestSearchSuggestion = (query: string): string | null => {
+    const q = query.toLowerCase().replaceAll('[', '').replaceAll(']', '').trim();
+    if (!q) return null;
+    
+    // 1. Check direct categories
+    const categories = ['food', 'shelter', 'hospital', 'police', 'education', 'volunteer'];
+    for (const cat of categories) {
+        if (getLevenshteinDistance(q, cat) <= 2) return cat;
+        if (q.endsWith('s') && getLevenshteinDistance(q.slice(0, -1), cat) <= 2) return cat;
+    }
+    
+    // 2. Check resource names or services
+    let bestMatch: string | null = null;
+    let minDistance = 4; // threshold for words
+    
+    for (const r of resources) {
+        const nameWords = r.name.toLowerCase().split(/\s+/);
+        for (const word of nameWords) {
+            const cleanWord = word.replace(/[^\w]/g, '');
+            if (cleanWord.length > 2) {
+                const dist = getLevenshteinDistance(q, cleanWord);
+                if (dist < minDistance) {
+                    minDistance = dist;
+                    bestMatch = r.name;
+                }
+            }
+        }
+        for (const s of r.services) {
+            const serviceWords = s.toLowerCase().split(/\s+/);
+            for (const word of serviceWords) {
+                const cleanWord = word.replace(/[^\w]/g, '');
+                if (cleanWord.length > 2) {
+                    const dist = getLevenshteinDistance(q, cleanWord);
+                    if (dist < minDistance) {
+                        minDistance = dist;
+                        bestMatch = s;
+                    }
+                }
+            }
+        }
+    }
+    return bestMatch;
+};
+
+const findClosestCommandSuggestion = (cmd: string): string | null => {
+    const q = cmd.toLowerCase().trim();
+    if (!q) return null;
+    
+    let bestMatch: string | null = null;
+    let minDistance = 3; // threshold
+    
+    for (const validCmd of COMMANDS) {
+        const dist = getLevenshteinDistance(q, validCmd);
+        if (dist < minDistance) {
+            minDistance = dist;
+            bestMatch = validCmd;
+        }
+    }
+    return bestMatch;
+};
+
 export const CliMode = ({
     onExit,
     isDarkMode,
@@ -249,7 +331,15 @@ export const CliMode = ({
                         );
                         if (matches.length === 0) {
                             playErrorSound();
-                            newHistory.push(`No resources match query term: "${arg}"`);
+                            const suggestion = findClosestSearchSuggestion(arg);
+                            if (suggestion) {
+                                newHistory.push(
+                                    `No resources match query term: "${arg}"`,
+                                    `Did you mean: "${suggestion}"?`
+                                );
+                            } else {
+                                newHistory.push(`No resources match query term: "${arg}"`);
+                            }
                         } else {
                             playSuccessSound();
                             newHistory.push(`Discovered ${matches.length} matching resources:`);
@@ -277,9 +367,16 @@ export const CliMode = ({
                     break;
                 }
 
-                default:
+                default: {
                     playErrorSound();
-                    newHistory.push(`Unknown command: "${action}". Type "help" for assistance.`);
+                    const suggestion = findClosestCommandSuggestion(action);
+                    if (suggestion) {
+                        newHistory.push(`Unknown command: "${action}". Did you mean: "${suggestion}"? Type "help" for a list of valid commands.`);
+                    } else {
+                        newHistory.push(`Unknown command: "${action}". Type "help" for assistance.`);
+                    }
+                    break;
+                }
             }
 
             setHistory(newHistory);
